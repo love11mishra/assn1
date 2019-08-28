@@ -134,7 +134,7 @@ type fileBlock struct {
 }
 
 type FileMetadata struct {
-	FileId     uuid.UUID
+	//FileId     uuid.UUID
 	EncryptKey []byte
 	blocks     map[int]string
 	size       int
@@ -169,14 +169,14 @@ func (userdata *User) StoreFile(filename string, data []byte) (err error) {
 	}
 
 	var metaData FileMetadata
-	metaData.FileId = bytesToUUID([]byte(filename))
+	//metaData.FileId = bytesToUUID([]byte(filename))
 	metaData.size = len(data) / userlib.BlockSize
 	metaData.blocks = make(map[int]string)
 	metaData.EncryptKey = userlib.Argon2Key([]byte(userdata.Username), []byte(filename), 16)
 	//divide file into blocks
-	for i := 0; i < metaData.size; i++ {
-		metaData.blocks[i] = storeBlock(filename, data, i, metaData.EncryptKey)
-	}
+	// for i := 0; i < metaData.size; i++ {
+	// 	metaData.blocks[i] = storeBlock(filename, data[], i, metaData.EncryptKey)
+	// }
 	userdata.Myfiles[filename] = metaData
 	return
 }
@@ -200,9 +200,13 @@ func (userdata *User) AppendFile(filename string, data []byte) (err error) {
 //
 // LoadFile is also expected to be efficient. Reading a random block from the
 // file should not fetch more than O(1) blocks from the Datastore.
-func (userdata *User) LoadFile(filename string, offset int) (data []byte, err error) {
-	return
-}
+// func (userdata *User) LoadFile(filename string, offset int) (data []byte, err error) {
+// 	metaData := userdata.Myfiles[filename]
+// 	address := metaData.blocks[offset]
+// 	Edata, ok := userlib.DatastoreGet(address)
+
+// 	return
+// }
 
 // ShareFile : Function used to the share file with other user
 func (userdata *User) ShareFile(filename string, recipient string) (msgid string, err error) {
