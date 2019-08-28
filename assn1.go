@@ -128,15 +128,16 @@ type EMAC struct {
 	Mac        []byte
 }
 
-type fileBlock struct {
-	data   []byte
-	MACKey []byte
-}
+// type fileBlock struct {
+// 	data   []byte
+// 	MACKey []byte
+// }
 
 type FileMetadata struct {
-	//FileId     uuid.UUID
+	fileName   string
 	EncryptKey []byte
 	blocks     map[int]string
+	blockMac   map[int][]byte
 	size       int
 }
 
@@ -164,19 +165,21 @@ type User struct {
 // of data []byte is a multiple of the blocksize; if
 // this is not the case, StoreFile should return an error.
 func (userdata *User) StoreFile(filename string, data []byte) (err error) {
-	if len(data)%userlib.BlockSize != 0 {
+	if strings.Compare(filename, "") == 0 || len(data)%userlib.BlockSize != 0 {
 		return errors.New("Invalid Filesize")
 	}
 
 	var metaData FileMetadata
-	//metaData.FileId = bytesToUUID([]byte(filename))
+	metaData.fileName = filename
 	metaData.size = len(data) / userlib.BlockSize
 	metaData.blocks = make(map[int]string)
+	metaData.blockMac = make(map[int][]byte)
 	metaData.EncryptKey = userlib.Argon2Key([]byte(userdata.Username), []byte(filename), 16)
 	//divide file into blocks
-	// for i := 0; i < metaData.size; i++ {
-	// 	metaData.blocks[i] = storeBlock(filename, data[], i, metaData.EncryptKey)
-	// }
+	for i := 0; i < metaData.size; i++ {
+		metaData.blocks[i] = storeBlock(filename, data[i:userlib.BlockSize], i, metaData.EncryptKey)
+		metaData.blockMac[i] = Hash(data[i:userlib.BlockSize])
+	}
 	userdata.Myfiles[filename] = metaData
 	return
 }
@@ -188,6 +191,22 @@ func (userdata *User) StoreFile(filename string, data []byte) (err error) {
 // the block size; if it is not, AppendFile must return an error.
 // AppendFile : Function to append the file
 func (userdata *User) AppendFile(filename string, data []byte) (err error) {
+	if strings.Compare(filename, "") == 0 || (len(data) != 0 && len(data)%userlib.BlockSize != 0) {
+		return errors.New("Invalid Arguments")
+	}
+	metaData := userdata.Myfiles[filename]
+
+	//Checking if file exists
+	if metaData.fileName == "" {
+		return errors.New("Invalid Arguments")
+	}
+	j := 0
+	for i := metaData.size; i < metaData.size+(len(data)/userlib.BlockSize); i++ {
+		metaData.blocks[i] = storeBlock(filename, data[j:j+userlib.BlockSize], i, metaData.EncryptKey)
+		metaData.blockMac[i] = Hash(data[j : j+userlib.BlockSize])
+		j += userlib.BlockSize
+	}
+	metaData.size += len(data) / userlib.BlockSize
 	return
 
 }
@@ -200,13 +219,40 @@ func (userdata *User) AppendFile(filename string, data []byte) (err error) {
 //
 // LoadFile is also expected to be efficient. Reading a random block from the
 // file should not fetch more than O(1) blocks from the Datastore.
-// func (userdata *User) LoadFile(filename string, offset int) (data []byte, err error) {
-// 	metaData := userdata.Myfiles[filename]
-// 	address := metaData.blocks[offset]
-// 	Edata, ok := userlib.DatastoreGet(address)
+func (userdata *User) LoadFile(filename string, offset int) (data []byte, err error) {
 
-// 	return
-// }
+	//Checking if filename is not empty
+	if strings.Compare(filename, "") == 0 {
+		return nil, errors.New("Invalid Filesize")
+	}
+	metaData := userdata.Myfiles[filename]
+
+	//Checking if offset is bigger than filesize
+	if metaData.size < offset {
+		return nil, errors.New("Invalid offset")
+	}
+
+	//Getting address of the block
+	address := metaData.blocks[offset]
+
+	//Retrieving block data
+	EBlockData, ok := userlib.DatastoreGet(address)
+	if ok == false {
+		return nil, errors.New("Data Corrupted")
+	}
+	data, err = MyCFBDecrypter(EBlockData, metaData.EncryptKey)
+	if err != nil {
+		return nil, errors.New("Data Corrupted")
+	}
+	returnedMAC := Hash(data)
+
+	ok1 := userlib.Equal(metaData.blockMac[offset], returnedMAC)
+	if ok1 == false {
+		return nil, errors.New("Data Corrupted")
+	}
+
+	return
+}
 
 // ShareFile : Function used to the share file with other user
 func (userdata *User) ShareFile(filename string, recipient string) (msgid string, err error) {
