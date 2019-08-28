@@ -74,15 +74,6 @@ func setBlockSize(blocksize int) {
 	configBlockSize = blocksize
 }
 
-// Helper function: Takes the first 16 bytes and
-// converts it into the UUID type
-func bytesToUUID(data []byte) (ret uuid.UUID) {
-	for x := range ret {
-		ret[x] = data[x]
-	}
-	return
-}
-
 //helper function to return hash as []byte
 func Hash(datatoHash []byte) []byte {
 	hasher := userlib.NewSHA256()
@@ -127,11 +118,6 @@ type EMAC struct {
 	CipherText []byte
 	Mac        []byte
 }
-
-// type fileBlock struct {
-// 	data   []byte
-// 	MACKey []byte
-// }
 
 type FileMetadata struct {
 	fileName   string
@@ -184,7 +170,6 @@ func (userdata *User) StoreFile(filename string, data []byte) (err error) {
 	return
 }
 
-//
 // Append should be efficient, you shouldn't rewrite or reencrypt the
 // existing file, but only whatever additional information and
 // metadata you need. The length of data []byte must be a multiple of
@@ -255,37 +240,38 @@ func (userdata *User) LoadFile(filename string, offset int) (data []byte, err er
 }
 
 // ShareFile : Function used to the share file with other user
-func (userdata *User) ShareFile(filename string, recipient string) (msgid string, err error) {
-	return
-}
+// func (userdata *User) ShareFile(filename string, recipient string) (msgid string, err error) {
+// 	return
+// }
 
-// ReceiveFile:Note recipient's filename can be different from the sender's filename.
-// The recipient should not be able to discover the sender's view on
-// what the filename even is!  However, the recipient must ensure that
-// it is authentically from the sender.
-// ReceiveFile : function used to receive the file details from the sender
-func (userdata *User) ReceiveFile(filename string, sender string, msgid string) error {
-	return errors.New("err")
-}
+// // ReceiveFile:Note recipient's filename can be different from the sender's filename.
+// // The recipient should not be able to discover the sender's view on
+// // what the filename even is!  However, the recipient must ensure that
+// // it is authentically from the sender.
+// // ReceiveFile : function used to receive the file details from the sender
+// func (userdata *User) ReceiveFile(filename string, sender string, msgid string) error {
+// 	return errors.New("err")
+// }
 
-// RevokeFile : function used revoke the shared file access
-func (userdata *User) RevokeFile(filename string) (err error) {
-	return
-}
+// // RevokeFile : function used revoke the shared file access
+// func (userdata *User) RevokeFile(filename string) (err error) {
+// 	return
+// }
 
-// This creates a sharing record, which is a key pointing to something
-// in the datastore to share with the recipient.
+// // This creates a sharing record, which is a key pointing to something
+// // in the datastore to share with the recipient.
 
-// This enables the recipient to access the encrypted file as well
-// for reading/appending.
+// // This enables the recipient to access the encrypted file as well
+// // for reading/appending.
 
-// Note that neither the recipient NOR the datastore should gain any
-// information about what the sender calls the file.  Only the
-// recipient can access the sharing record, and only the recipient
-// should be able to know the sender.
-// You may want to define what you actually want to pass as a
-// sharingRecord to serialized/deserialize in the data store.
+// // Note that neither the recipient NOR the datastore should gain any
+// // information about what the sender calls the file.  Only the
+// // recipient can access the sharing record, and only the recipient
+// // should be able to know the sender.
+// // You may want to define what you actually want to pass as a
+// // sharingRecord to serialized/deserialize in the data store.
 type sharingRecord struct {
+	filename string
 }
 
 // This creates a user.  It will only be called once for a user
