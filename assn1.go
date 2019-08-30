@@ -7,7 +7,6 @@ import (
 
 	// You neet to add with
 	// go get github.com/sarkarbidya/CS628-assn1/userlib
-	"crypto/rsa"
 
 	"github.com/sarkarbidya/CS628-assn1/userlib"
 
@@ -74,7 +73,7 @@ func setBlockSize(blocksize int) {
 	configBlockSize = blocksize
 }
 
-//helper function to return hash as []byte
+//Hash helper function to return hash as []byte
 func Hash(datatoHash []byte) []byte {
 	hasher := userlib.NewSHA256()
 	hasher.Write(datatoHash)
@@ -82,7 +81,7 @@ func Hash(datatoHash []byte) []byte {
 	return hash
 }
 
-//helper function to add user data to datastore
+//addUserToDataStore helper function to add user data to datastore
 func addUserToDataStore(user User, emac EMAC) {
 	userData, _ := json.Marshal(emac)
 	userKey := Hash([]byte(user.Username + user.Password))
@@ -92,7 +91,7 @@ func addUserToDataStore(user User, emac EMAC) {
 
 }
 
-//helper function to CFBEncrypter
+//MyCFBEncrypter helper function to CFBEncrypter
 func MyCFBEncrypter(plainText []byte, key []byte) (ciphertext []byte) {
 	ciphertext = make([]byte, userlib.BlockSize+len(plainText))
 	iv := ciphertext[:userlib.BlockSize]
@@ -102,6 +101,7 @@ func MyCFBEncrypter(plainText []byte, key []byte) (ciphertext []byte) {
 	return
 }
 
+//MyCFBDecrypter helper function to CFBDecrypter
 func MyCFBDecrypter(ciphertext []byte, Key []byte) (plaintext []byte, err error) {
 	if len(ciphertext) <= userlib.BlockSize {
 		return nil, errors.New(strings.ToTitle("Invalid Ciphertext"))
@@ -113,12 +113,13 @@ func MyCFBDecrypter(ciphertext []byte, Key []byte) (plaintext []byte, err error)
 	return plaintext, nil
 }
 
-//helper struct to store encrypted_data and mac(encrypted_data)
+//EMAC helper struct to store encrypted_data and mac(encrypted_data)
 type EMAC struct {
 	CipherText []byte
 	Mac        []byte
 }
 
+//FileMetadata struct
 type FileMetadata struct {
 	fileName   string
 	EncryptKey []byte
@@ -142,8 +143,7 @@ type User struct {
 	Password    string
 	Myfiles     map[string]FileMetadata
 	Sharedfiles map[string]sharingRecord
-	PrivateKey  userlib.PrivateKey
-	PublicKey   rsa.PublicKey
+	PrivateKey  *userlib.PrivateKey
 }
 
 // StoreFile : function used to create a  file
@@ -151,32 +151,42 @@ type User struct {
 // of data []byte is a multiple of the blocksize; if
 // this is not the case, StoreFile should return an error.
 func (userdata *User) StoreFile(filename string, data []byte) (err error) {
-	if strings.Compare(filename, "") == 0 || len(data)%userlib.BlockSize != 0 {
-		return errors.New("Invalid Filesize")
+	if /*userdata.Myfiles[filename].fileName != "" ||*/ strings.Compare(filename, "") == 0 || len(data)%configBlockSize != 0 {
+		return errors.New("Invalid Filesize or pre-exist")
 	}
 
 	var metaData FileMetadata
 	metaData.fileName = filename
-	metaData.size = len(data) / userlib.BlockSize
+	metaData.size = len(data) / configBlockSize
 	metaData.blocks = make(map[int]string)
 	metaData.blockMac = make(map[int][]byte)
 	metaData.EncryptKey = userlib.Argon2Key([]byte(userdata.Username), []byte(filename), 16)
 	//divide file into blocks
 	for i := 0; i < metaData.size; i++ {
-		metaData.blocks[i] = storeBlock(filename, data[i:userlib.BlockSize], i, metaData.EncryptKey)
-		metaData.blockMac[i] = Hash(data[i:userlib.BlockSize])
+		metaData.blocks[i] = storeBlock(filename, data[i:configBlockSize+i], i, metaData.EncryptKey)
+		metaData.blockMac[i] = Hash(data[i : configBlockSize+i])
 	}
 	userdata.Myfiles[filename] = metaData
+
+	// Generating encryption key
+	key := userlib.Argon2Key([]byte(userdata.Password), Hash([]byte(userdata.Username)), 16)
+	userStr, _ := json.Marshal(userdata)
+	var userEmac EMAC
+	userEmac.CipherText = MyCFBEncrypter([]byte(userStr), key)
+	userEmac.Mac = Hash(userEmac.CipherText)
+
+	//Making an entry to datastore for user
+	addUserToDataStore(*userdata, userEmac)
 	return
 }
 
-// Append should be efficient, you shouldn't rewrite or reencrypt the
+// AppendFile Append should be efficient, you shouldn't rewrite or reencrypt the
 // existing file, but only whatever additional information and
 // metadata you need. The length of data []byte must be a multiple of
 // the block size; if it is not, AppendFile must return an error.
 // AppendFile : Function to append the file
 func (userdata *User) AppendFile(filename string, data []byte) (err error) {
-	if strings.Compare(filename, "") == 0 || (len(data) != 0 && len(data)%userlib.BlockSize != 0) {
+	if strings.Compare(filename, "") == 0 || len(data) == 0 || len(data)%configBlockSize != 0 {
 		return errors.New("Invalid Arguments")
 	}
 	metaData := userdata.Myfiles[filename]
@@ -186,13 +196,13 @@ func (userdata *User) AppendFile(filename string, data []byte) (err error) {
 		return errors.New("Invalid Arguments")
 	}
 	j := 0
-	for i := metaData.size; i < metaData.size+(len(data)/userlib.BlockSize); i++ {
-		metaData.blocks[i] = storeBlock(filename, data[j:j+userlib.BlockSize], i, metaData.EncryptKey)
-		metaData.blockMac[i] = Hash(data[j : j+userlib.BlockSize])
-		j += userlib.BlockSize
+	for i := metaData.size; i < metaData.size+(len(data)/configBlockSize); i++ {
+		metaData.blocks[i] = storeBlock(filename, data[j:j+configBlockSize], i, metaData.EncryptKey)
+		metaData.blockMac[i] = Hash(data[j : j+configBlockSize])
+		j += configBlockSize
 	}
-	metaData.size += len(data) / userlib.BlockSize
-	return
+	metaData.size += len(data) / configBlockSize
+	return nil
 
 }
 
@@ -208,7 +218,7 @@ func (userdata *User) LoadFile(filename string, offset int) (data []byte, err er
 
 	//Checking if filename is not empty
 	if strings.Compare(filename, "") == 0 {
-		return nil, errors.New("Invalid Filesize")
+		return nil, errors.New("Invalid arguments")
 	}
 	metaData := userdata.Myfiles[filename]
 
@@ -223,40 +233,40 @@ func (userdata *User) LoadFile(filename string, offset int) (data []byte, err er
 	//Retrieving block data
 	EBlockData, ok := userlib.DatastoreGet(address)
 	if ok == false {
-		return nil, errors.New("Data Corrupted")
+		return nil, errors.New("Data Corrupted(failed to load)")
 	}
 	data, err = MyCFBDecrypter(EBlockData, metaData.EncryptKey)
 	if err != nil {
-		return nil, errors.New("Data Corrupted")
+		return nil, errors.New("Data Corrupted(failed to decrypt)")
 	}
 	returnedMAC := Hash(data)
 
 	ok1 := userlib.Equal(metaData.blockMac[offset], returnedMAC)
 	if ok1 == false {
-		return nil, errors.New("Data Corrupted")
+		return nil, errors.New("Data Corrupted(failed to match)")
 	}
 
 	return
 }
 
 // ShareFile : Function used to the share file with other user
-// func (userdata *User) ShareFile(filename string, recipient string) (msgid string, err error) {
-// 	return
-// }
+func (userdata *User) ShareFile(filename string, recipient string) (msgid string, err error) {
+	return
+}
 
-// // ReceiveFile:Note recipient's filename can be different from the sender's filename.
-// // The recipient should not be able to discover the sender's view on
-// // what the filename even is!  However, the recipient must ensure that
-// // it is authentically from the sender.
-// // ReceiveFile : function used to receive the file details from the sender
-// func (userdata *User) ReceiveFile(filename string, sender string, msgid string) error {
-// 	return errors.New("err")
-// }
+// ReceiveFile :Note recipient's filename can be different from the sender's filename.
+// The recipient should not be able to discover the sender's view on
+// what the filename even is!  However, the recipient must ensure that
+// it is authentically from the sender.
+//ReceiveFile : function used to receive the file details from the sender
+func (userdata *User) ReceiveFile(filename string, sender string, msgid string) error {
+	return errors.New("err")
+}
 
-// // RevokeFile : function used revoke the shared file access
-// func (userdata *User) RevokeFile(filename string) (err error) {
-// 	return
-// }
+// RevokeFile : function used revoke the shared file access
+func (userdata *User) RevokeFile(filename string) (err error) {
+	return
+}
 
 // // This creates a sharing record, which is a key pointing to something
 // // in the datastore to share with the recipient.
@@ -271,7 +281,6 @@ func (userdata *User) LoadFile(filename string, offset int) (data []byte, err er
 // // You may want to define what you actually want to pass as a
 // // sharingRecord to serialized/deserialize in the data store.
 type sharingRecord struct {
-	filename string
 }
 
 // This creates a user.  It will only be called once for a user
@@ -288,6 +297,7 @@ type sharingRecord struct {
 // keystore and the datastore functions in the userlib library.
 
 // You can assume the user has a STRONG password
+
 //InitUser : function used to create user
 func InitUser(username string, password string) (userdataptr *User, err error) {
 	var user User
@@ -295,7 +305,7 @@ func InitUser(username string, password string) (userdataptr *User, err error) {
 	user.Password = password
 	// Checking if username or password is/are empty
 	if strings.Compare(user.Username, "") == 0 || strings.Compare(user.Password, "") == 0 {
-		err = errors.New("not good")
+		err = errors.New("Invalid Arguments")
 		return nil, err
 	}
 
@@ -308,14 +318,14 @@ func InitUser(username string, password string) (userdataptr *User, err error) {
 	// Creating maps for file management
 	user.Myfiles = make(map[string]FileMetadata)
 	user.Sharedfiles = make(map[string]sharingRecord)
-	user.PrivateKey = *rsaKey
-	user.PublicKey = rsaKey.PublicKey
+	user.PrivateKey = rsaKey
+	PublicKey := rsaKey.PublicKey
 
 	// Generating encryption key
 	key := userlib.Argon2Key([]byte(user.Password), Hash([]byte(user.Username)), 16)
 
 	// Registering public key to the keystore
-	userlib.KeystoreSet(user.Username, user.PublicKey)
+	userlib.KeystoreSet(user.Username, PublicKey)
 
 	//Marshalling user data, creating ciphertext and mac for userdata
 	userStr, _ := json.Marshal(user)
@@ -346,7 +356,7 @@ func GetUser(username string, password string) (userdataptr *User, err error) {
 		return nil, errors.New("Data Corrupted")
 	}
 	var emac EMAC
-	json.Unmarshal(userData, emac)
+	json.Unmarshal(userData, &emac)
 	returnedMAC := Hash(emac.CipherText)
 	ok1 := userlib.Equal(emac.Mac, returnedMAC)
 	if ok1 == false {
@@ -354,7 +364,7 @@ func GetUser(username string, password string) (userdataptr *User, err error) {
 	}
 	var user User
 	ciphertext, _ := MyCFBDecrypter(emac.CipherText, key)
-	json.Unmarshal(ciphertext, user)
+	json.Unmarshal(ciphertext, &user)
 
 	return &user, nil
 }
