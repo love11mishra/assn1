@@ -56,7 +56,19 @@ func TestFileStoreLoadAppend(t *testing.T) {
 	} else {
 		t.Log("data is not corrupted")
 	}
+	//u3, _ := GetUser("lavlesh", "mishra")
+	metadata := u1.Myfiles["file1"]
+	fmt.Printf("file size before append: %v ", metadata.size)
 
+	//testing fakefile
+	err1 := u1.AppendFile("file1", data1)
+	if err1 != nil {
+		fmt.Printf("append error %v\n", err1)
+		//t.Error("append fail")
+	}
+	//u2, _ := GetUser("lavlesh", "mishra")
+	metadata1 := u1.Myfiles["file1"]
+	fmt.Printf("file size after append: %v", metadata1.size)
 	// add test cases here
 }
 

@@ -192,8 +192,8 @@ func (userdata *User) AppendFile(filename string, data []byte) (err error) {
 	metaData := userdata.Myfiles[filename]
 
 	//Checking if file exists
-	if metaData.fileName == "" {
-		return errors.New("Invalid Arguments")
+	if strings.Compare(metaData.fileName, filename) != 0 {
+		return errors.New("Invalid Arguments(does not exist)")
 	}
 	j := 0
 	for i := metaData.size; i < metaData.size+(len(data)/configBlockSize); i++ {
@@ -202,6 +202,19 @@ func (userdata *User) AppendFile(filename string, data []byte) (err error) {
 		j += configBlockSize
 	}
 	metaData.size += len(data) / configBlockSize
+
+	//To store back.....
+	userdata.Myfiles[filename] = metaData
+
+	// Generating encryption key
+	key := userlib.Argon2Key([]byte(userdata.Password), Hash([]byte(userdata.Username)), 16)
+	userStr, _ := json.Marshal(userdata)
+	var userEmac EMAC
+	userEmac.CipherText = MyCFBEncrypter([]byte(userStr), key)
+	userEmac.Mac = Hash(userEmac.CipherText)
+
+	//Making an entry to datastore for user
+	addUserToDataStore(*userdata, userEmac)
 	return nil
 
 }
@@ -223,7 +236,7 @@ func (userdata *User) LoadFile(filename string, offset int) (data []byte, err er
 	metaData := userdata.Myfiles[filename]
 
 	//Checking if offset is bigger than filesize
-	if metaData.size < offset {
+	if metaData.size <= offset {
 		return nil, errors.New("Invalid offset")
 	}
 
