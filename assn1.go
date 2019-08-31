@@ -130,7 +130,7 @@ type FileMetadata struct {
 
 //functio to store blocks
 func storeBlock(filename string, data []byte, offset int, key []byte) string {
-	addr := string(Hash([]byte(filename + string(offset))))
+	addr := string(Hash(userlib.RandomBytes(32)))
 	Edata := MyCFBEncrypter(data, key)
 	userlib.DatastoreSet(addr, Edata)
 	return addr
@@ -339,6 +339,8 @@ func (userdata *User) ReceiveFile(filename string, sender string, msgid string) 
 
 // RevokeFile : function used revoke the shared file access
 func (userdata *User) RevokeFile(filename string) (err error) {
+	//metadata := userdata.Myfiles[filename]
+
 	return
 }
 
