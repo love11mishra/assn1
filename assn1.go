@@ -139,11 +139,11 @@ func storeBlock(filename string, data []byte, offset int, key []byte) string {
 
 //User : User structure used to store the user information
 type User struct {
-	Username    string
-	Password    string
-	Myfiles     map[string]FileMetadata
-	Sharedfiles map[string]sharingRecord
-	PrivateKey  *userlib.PrivateKey
+	Username string
+	Password string
+	Myfiles  map[string]FileMetadata
+	//Sharedfiles map[string]sharingRecord
+	PrivateKey *userlib.PrivateKey
 }
 
 // StoreFile : function used to create a  file
@@ -264,7 +264,35 @@ func (userdata *User) LoadFile(filename string, offset int) (data []byte, err er
 
 // ShareFile : Function used to the share file with other user
 func (userdata *User) ShareFile(filename string, recipient string) (msgid string, err error) {
-	return
+	//Metadata of file to be shared
+	sfileMetadata := userdata.Myfiles[filename]
+
+	//Marshalled metadata
+	msfileMetadata, _ := json.Marshal(sfileMetadata)
+
+	//getting recipient key
+	recipientPublicKey, ok := userlib.KeystoreGet(recipient)
+	if ok == false {
+		return "", errors.New("Recipient does not exist")
+	}
+
+	//Encrypting filemetada
+	ciphertext, _ := userlib.RSAEncrypt(&recipientPublicKey, []byte(msfileMetadata), []byte(""))
+
+	//performing rsa sign
+	sign, _ := userlib.RSASign(userdata.PrivateKey, ciphertext)
+
+	//Creating sharingRecord
+	var sRecord sharingRecord
+	sRecord.marshalledMetadata = ciphertext
+	sRecord.rsaSign = sign
+
+	//Marshalling the final data to be shared
+	message, err1 := json.Marshal(sRecord)
+	if err != nil {
+		return "", err1
+	}
+	return string(message), err
 }
 
 // ReceiveFile :Note recipient's filename can be different from the sender's filename.
@@ -273,7 +301,40 @@ func (userdata *User) ShareFile(filename string, recipient string) (msgid string
 // it is authentically from the sender.
 //ReceiveFile : function used to receive the file details from the sender
 func (userdata *User) ReceiveFile(filename string, sender string, msgid string) error {
-	return errors.New("err")
+	var sRecord sharingRecord
+	json.Unmarshal([]byte(msgid), &sRecord)
+
+	//Getting senders public Key
+	sendersPkey, ok := userlib.KeystoreGet(sender)
+	if ok != true {
+		return errors.New("Sender not verified")
+	}
+
+	//Verify if data is tampered
+	err := userlib.RSAVerify(&sendersPkey, sRecord.marshalledMetadata, sRecord.rsaSign)
+	if err != nil {
+		return errors.New("data Tampered")
+	}
+	//Decrypting the file
+	plaintext, _ := userlib.RSADecrypt(userdata.PrivateKey, sRecord.marshalledMetadata, []byte(""))
+
+	//Creating a filemetadata instance
+	var metadata FileMetadata
+	json.Unmarshal(plaintext, &metadata)
+	userdata.Myfiles[filename] = metadata
+
+	//updating the user
+	// Generating encryption key
+	key := userlib.Argon2Key([]byte(userdata.Password), Hash([]byte(userdata.Username)), 16)
+	userStr, _ := json.Marshal(userdata)
+	var userEmac EMAC
+	userEmac.CipherText = MyCFBEncrypter([]byte(userStr), key)
+	userEmac.Mac = Hash(userEmac.CipherText)
+
+	//Making an entry to datastore for user
+	addUserToDataStore(*userdata, userEmac)
+
+	return nil
 }
 
 // RevokeFile : function used revoke the shared file access
@@ -294,6 +355,8 @@ func (userdata *User) RevokeFile(filename string) (err error) {
 // // You may want to define what you actually want to pass as a
 // // sharingRecord to serialized/deserialize in the data store.
 type sharingRecord struct {
+	marshalledMetadata []byte
+	rsaSign            []byte
 }
 
 // This creates a user.  It will only be called once for a user
@@ -330,7 +393,7 @@ func InitUser(username string, password string) (userdataptr *User, err error) {
 
 	// Creating maps for file management
 	user.Myfiles = make(map[string]FileMetadata)
-	user.Sharedfiles = make(map[string]sharingRecord)
+	//user.Sharedfiles = make(map[string]sharingRecord)
 	user.PrivateKey = rsaKey
 	PublicKey := rsaKey.PublicKey
 
@@ -376,8 +439,8 @@ func GetUser(username string, password string) (userdataptr *User, err error) {
 		return nil, errors.New("Data Corrupted")
 	}
 	var user User
-	ciphertext, _ := MyCFBDecrypter(emac.CipherText, key)
-	json.Unmarshal(ciphertext, &user)
+	plaintext, _ := MyCFBDecrypter(emac.CipherText, key)
+	json.Unmarshal(plaintext, &user)
 
 	return &user, nil
 }
