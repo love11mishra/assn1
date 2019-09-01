@@ -347,7 +347,7 @@ func (userdata *User) ReceiveFile(filename string, sender string, msgid string) 
 	//Verify if data is tampered
 	err := userlib.RSAVerify(&sendersPkey, sRecord.marshalledMetadata, sRecord.rsaSign)
 	if err != nil {
-		return errors.New("data Tampered") //err
+		return errors.New("data Tampered(not verified)") //err
 	}
 	//Decrypting the file
 	plaintext, errD := userlib.RSADecrypt(userdata.PrivateKey, sRecord.marshalledMetadata, nil)
@@ -366,7 +366,7 @@ func (userdata *User) ReceiveFile(filename string, sender string, msgid string) 
 	// }
 	//Creating a filemetadata instance
 	var metadata FileMetadata
-	json.Unmarshal([]byte(msfileMetadata), &metadata)
+	json.Unmarshal([]byte(plaintext), &metadata)
 	userdata.Myfiles[filename] = metadata
 
 	//updating the user
@@ -385,7 +385,13 @@ func (userdata *User) ReceiveFile(filename string, sender string, msgid string) 
 
 // RevokeFile : function used revoke the shared file access
 func (userdata *User) RevokeFile(filename string) (err error) {
+	if filename == "" {
+		return errors.New("errrr")
+	}
 	metadata := userdata.Myfiles[filename]
+	if metadata.size == 0 {
+		return errors.New("revoke error")
+	}
 	data := []byte{}
 	for i := 0; i < metadata.size; i++ {
 		block, _ := userdata.LoadFile(filename, i)
@@ -399,7 +405,7 @@ func (userdata *User) RevokeFile(filename string) (err error) {
 	delete(userdata.Myfiles, filename)
 	userdata.StoreFile(filename, data)
 
-	return
+	return nil
 }
 
 // // This creates a sharing record, which is a key pointing to something
