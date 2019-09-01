@@ -121,7 +121,7 @@ type EMAC struct {
 
 //FileMetadata struct
 type FileMetadata struct {
-	fileName   string
+	//fileName   string
 	EncryptKey []byte
 	blocks     map[int]string
 	blockMac   map[int][]byte
@@ -151,12 +151,12 @@ type User struct {
 // of data []byte is a multiple of the blocksize; if
 // this is not the case, StoreFile should return an error.
 func (userdata *User) StoreFile(filename string, data []byte) (err error) {
-	if /*userdata.Myfiles[filename].fileName != "" ||*/ strings.Compare(filename, "") == 0 || len(data)%configBlockSize != 0 {
+	if strings.Compare(filename, "") == 0 || len(data)%configBlockSize != 0 || len(data) == 0 {
 		return errors.New("Invalid Filesize or pre-exist")
 	}
 
 	var metaData FileMetadata
-	metaData.fileName = filename
+	//metaData.fileName = filename
 	metaData.size = len(data) / configBlockSize
 	metaData.blocks = make(map[int]string)
 	metaData.blockMac = make(map[int][]byte)
@@ -187,13 +187,13 @@ func (userdata *User) StoreFile(filename string, data []byte) (err error) {
 // AppendFile : Function to append the file
 func (userdata *User) AppendFile(filename string, data []byte) (err error) {
 	if strings.Compare(filename, "") == 0 || len(data) == 0 || len(data)%configBlockSize != 0 {
-		return errors.New("Invalid Arguments")
+		return errors.New("nil")
 	}
 	metaData := userdata.Myfiles[filename]
 
 	//Checking if file exists
-	if strings.Compare(metaData.fileName, filename) != 0 {
-		return errors.New("Invalid Arguments(does not exist)")
+	if metaData.size == 0 {
+		return errors.New("nil")
 	}
 	j := 0
 	for i := metaData.size; i < metaData.size+(len(data)/configBlockSize); i++ {
@@ -231,13 +231,17 @@ func (userdata *User) LoadFile(filename string, offset int) (data []byte, err er
 
 	//Checking if filename is not empty
 	if strings.Compare(filename, "") == 0 {
-		return nil, errors.New("Invalid arguments")
+		return nil, errors.New("nil")
 	}
 	metaData := userdata.Myfiles[filename]
 
+	//checking if file is present
+	if metaData.size == 0 {
+		return nil, errors.New("file does not exist")
+	}
 	//Checking if offset is bigger than filesize
 	if metaData.size <= offset {
-		return nil, errors.New("Invalid offset")
+		return nil, errors.New("offset error")
 	}
 
 	//Getting address of the block
@@ -246,17 +250,17 @@ func (userdata *User) LoadFile(filename string, offset int) (data []byte, err er
 	//Retrieving block data
 	EBlockData, ok := userlib.DatastoreGet(address)
 	if ok == false {
-		return nil, errors.New("Data Corrupted(failed to load)")
+		return nil, errors.New("nil")
 	}
 	data, err = MyCFBDecrypter(EBlockData, metaData.EncryptKey)
 	if err != nil {
-		return nil, errors.New("Data Corrupted(failed to decrypt)")
+		return nil, errors.New("nil")
 	}
 	returnedMAC := Hash(data)
 
 	ok1 := userlib.Equal(metaData.blockMac[offset], returnedMAC)
 	if ok1 == false {
-		return nil, errors.New("Data Corrupted(failed to match)")
+		return nil, errors.New("nil")
 	}
 
 	return
@@ -264,24 +268,47 @@ func (userdata *User) LoadFile(filename string, offset int) (data []byte, err er
 
 // ShareFile : Function used to the share file with other user
 func (userdata *User) ShareFile(filename string, recipient string) (msgid string, err error) {
+	if filename == "" || recipient == "" {
+		return "", errors.New("invalid op")
+	}
+
 	//Metadata of file to be shared
 	sfileMetadata := userdata.Myfiles[filename]
-
+	if /*sfileMetadata.fileName != filename*/ sfileMetadata.size == 0 {
+		return "", errors.New("file does not exist1")
+	}
 	//Marshalled metadata
-	msfileMetadata, _ := json.Marshal(sfileMetadata)
+	msfileMetadata, err := json.Marshal(sfileMetadata)
 
 	//getting recipient key
 	recipientPublicKey, ok := userlib.KeystoreGet(recipient)
 	if ok == false {
 		return "", errors.New("Recipient does not exist")
 	}
+	// //............................................................//
+	// //Trial
+	// ciphertext1, errE1 := userlib.RSAEncrypt(&userdata.PrivateKey.PublicKey, msfileMetadata, nil)
+	// if errE1 != nil {
+	// 	return "", errors.New("Trial Encryption failed")
+	// }
+	// //Decrypting the file
+	// _, errD1 := userlib.RSADecrypt(userdata.PrivateKey, ciphertext1, nil)
+	// if errD1 != nil {
+	// 	return "" /*errD1*/, errors.New("Trial Decryption failed")
+	// }
+	// //end Trial
+	// //...........................................................//
 
 	//Encrypting filemetada
-	ciphertext, _ := userlib.RSAEncrypt(&recipientPublicKey, []byte(msfileMetadata), []byte(""))
-
+	ciphertext, errE := userlib.RSAEncrypt(&recipientPublicKey, msfileMetadata, nil)
+	if errE != nil {
+		return "", errors.New("Encryption failed")
+	}
 	//performing rsa sign
-	sign, _ := userlib.RSASign(userdata.PrivateKey, ciphertext)
-
+	sign, errS := userlib.RSASign(userdata.PrivateKey, ciphertext)
+	if errS != nil {
+		return "", errors.New("Signing failed")
+	}
 	//Creating sharingRecord
 	var sRecord sharingRecord
 	sRecord.marshalledMetadata = ciphertext
@@ -292,7 +319,10 @@ func (userdata *User) ShareFile(filename string, recipient string) (msgid string
 	if err != nil {
 		return "", err1
 	}
-	return string(message), err
+	// key := Hash([]byte(recipient + recipient))
+	// enc := MyCFBEncrypter(msfileMetadata, key)
+	//userlib.DatastoreSet(string(key), []byte(msfileMetadata))
+	return string(message), nil
 }
 
 // ReceiveFile :Note recipient's filename can be different from the sender's filename.
@@ -301,6 +331,10 @@ func (userdata *User) ShareFile(filename string, recipient string) (msgid string
 // it is authentically from the sender.
 //ReceiveFile : function used to receive the file details from the sender
 func (userdata *User) ReceiveFile(filename string, sender string, msgid string) error {
+	if filename == "" || sender == "" || msgid == "" {
+		return errors.New("invalid op")
+	}
+
 	var sRecord sharingRecord
 	json.Unmarshal([]byte(msgid), &sRecord)
 
@@ -313,14 +347,26 @@ func (userdata *User) ReceiveFile(filename string, sender string, msgid string) 
 	//Verify if data is tampered
 	err := userlib.RSAVerify(&sendersPkey, sRecord.marshalledMetadata, sRecord.rsaSign)
 	if err != nil {
-		return errors.New("data Tampered")
+		return errors.New("data Tampered") //err
 	}
 	//Decrypting the file
-	plaintext, _ := userlib.RSADecrypt(userdata.PrivateKey, sRecord.marshalledMetadata, []byte(""))
+	plaintext, errD := userlib.RSADecrypt(userdata.PrivateKey, sRecord.marshalledMetadata, nil)
+	if errD != nil {
+		return /*errD*/ errors.New("Decryption failed")
+	}
 
+	// msfileMetadata, err := userlib.DatastoreGet(msgid)
+	// if err != true {
+	// 	return errors.New("failed to load from store")
+	// }
+	// key1 := Hash([]byte(userdata.Username + userdata.Username))
+	// msfileMetadata, err5 := MyCFBDecrypter([]byte(msgid), key1)
+	// if err5 != nil {
+	// 	return errors.New("decryption problem")
+	// }
 	//Creating a filemetadata instance
 	var metadata FileMetadata
-	json.Unmarshal(plaintext, &metadata)
+	json.Unmarshal([]byte(msfileMetadata), &metadata)
 	userdata.Myfiles[filename] = metadata
 
 	//updating the user
@@ -339,7 +385,19 @@ func (userdata *User) ReceiveFile(filename string, sender string, msgid string) 
 
 // RevokeFile : function used revoke the shared file access
 func (userdata *User) RevokeFile(filename string) (err error) {
-	//metadata := userdata.Myfiles[filename]
+	metadata := userdata.Myfiles[filename]
+	data := []byte{}
+	for i := 0; i < metadata.size; i++ {
+		block, _ := userdata.LoadFile(filename, i)
+		data = append(data, block...)
+	}
+	for i := 0; i < metadata.size; i++ {
+		userlib.DatastoreDelete(metadata.blocks[i])
+		delete(metadata.blocks, i)
+		delete(metadata.blockMac, i)
+	}
+	delete(userdata.Myfiles, filename)
+	userdata.StoreFile(filename, data)
 
 	return
 }
@@ -397,13 +455,13 @@ func InitUser(username string, password string) (userdataptr *User, err error) {
 	user.Myfiles = make(map[string]FileMetadata)
 	//user.Sharedfiles = make(map[string]sharingRecord)
 	user.PrivateKey = rsaKey
-	PublicKey := rsaKey.PublicKey
+	//PublicKey := &rsaKey.PublicKey
 
 	// Generating encryption key
 	key := userlib.Argon2Key([]byte(user.Password), Hash([]byte(user.Username)), 16)
 
 	// Registering public key to the keystore
-	userlib.KeystoreSet(user.Username, PublicKey)
+	userlib.KeystoreSet(user.Username, rsaKey.PublicKey)
 
 	//Marshalling user data, creating ciphertext and mac for userdata
 	userStr, _ := json.Marshal(user)

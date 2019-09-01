@@ -42,10 +42,17 @@ func TestUserStorage(t *testing.T) {
 
 func TestFileStoreLoadAppend(t *testing.T) {
 	data1 := userlib.RandomBytes(4096)
-	InitUser("lavlesh", "mishra")
-	u1, _ := GetUser("lavlesh", "mishra")
-	_ = u1.StoreFile("file1", data1)
+	u1, err := InitUser("lavlesh", "mishra")
+	if err != nil {
+		fmt.Printf("Problem in initialization")
+	}
+	u1, _ = GetUser("lavlesh", "mishra")
 
+	err11 := u1.StoreFile("file1", data1)
+	if err11 != nil {
+		fmt.Printf("%v", err11)
+		//return nil, err
+	}
 	data2, err := u1.LoadFile("file1", 0)
 	if err != nil {
 		fmt.Printf("%v", err)
@@ -72,8 +79,44 @@ func TestFileStoreLoadAppend(t *testing.T) {
 	// add test cases here
 }
 
-/*
 func TestFileShareReceive(t *testing.T) {
+	data1 := userlib.RandomBytes(4096)
+	InitUser("lavlesh", "mishra")
+	u1, _ := GetUser("lavlesh", "mishra")
+	_ = u1.StoreFile("file1", data1)
+
+	//data2 := userlib.RandomBytes(4096)
+	InitUser("shashi", "bhushan")
+	u2, _ := GetUser("shashi", "bhushan")
+	//_ = u1.StoreFile("file2", data2)
 	// add test cases here
+	msgid, err := u1.ShareFile("file1", "shashi")
+	if err != nil {
+		fmt.Printf("error in sharefile is: %v", err)
+	}
+	err2 := u2.ReceiveFile("file3", "lavlesh", msgid)
+	if err2 != nil {
+		fmt.Printf("Error in receive file: %v\n ", err2)
+	}
+	//u2, _ = GetUser("shashi", "bhushan") //
+	data3, err := u1.LoadFile("file1", 0)
+	if err != nil {
+		fmt.Printf("in u1 load %v", err)
+		//return nil, err
+	}
+	if !reflect.DeepEqual(data3, data1) {
+		t.Error("problem in store file")
+	}
+	data4, err1 := u2.LoadFile("file3", 0)
+	if err1 != nil {
+		fmt.Printf("in u2 load %v", err1)
+		//return nil, err
+	}
+
+	if !reflect.DeepEqual(data3, data4) {
+		t.Error("data corrupted")
+	} else {
+		t.Log("shared successfully")
+	}
+
 }
-*/
